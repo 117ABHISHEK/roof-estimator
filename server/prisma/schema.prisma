@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A Config row is a full snapshot of business info + questions + modifiers.
+// We never mutate a config in place from the owner panel — we write a NEW
+// row with config_version + 1 and flip `active`. This gives Dale free
+// version history (stretch goal) and means a homeowner mid-estimate never
+// sees the config change under them: their POST /api/estimate re-reads
+// whatever is active at submit time, which is the correct, expected
+// behavior for a live pricing tool.
+model Config {
+  id             String   @id @default(cuid())
+  config_version Int      @unique
+  active         Boolean  @default(false)
+  business       Json     // { name, region, currency }
+  questions      Json     // array of question objects (see seed.js for shape)
+  modifiers      Json     // { waste_factor, permit_flat_fee, range_spread_pct }
+  created_at     DateTime @default(now())
+
+  leads Lead[]
+
+  @@index([active])
+}
+
+model Lead {
+  id             String   @id @default(cuid())
+  name           String
+  phone          String
+  email          String
+  answers        Json
+  estimate_low   Int
+  estimate_high  Int
+  config_version Int
+  config         Config   @relation(fields: [config_version], references: [config_version])
+  captured_at    DateTime @default(now())
+
+  @@index([captured_at])
+}
+
+// Single-tenant owner auth. Dale and Marcus share one role for now — see
+// DECISIONS.md for why per-user accounts / role separation were cut from
+// scope for a 24h build.
+model AdminUser {
+  id            String @id @default(cuid())
+  username      String @unique
+  password_hash String
+}
